@@ -16,7 +16,7 @@ class PerfectWorldPlatformLogic:
             "User-Agent": "okhttp/4.11.0",
             "appversion": "3.7.9.203",
             "device": "rGPSR1772436611LrL5aF8eKG3",
-            "token": "afcc7d944169de38167ec0c023d6dbae5121a948",
+            "token": "8e1233748353756e1d84a321753a98d599a9de48",
         }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
