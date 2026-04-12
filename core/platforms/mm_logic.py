@@ -10,6 +10,13 @@ from ...models.player_data import PlayerDataRequest
 
 
 class MatchMakingPlatformLogic:
+    @staticmethod
+    def _build_api_error_message(data: dict | None) -> str:
+        error_message = str((data or {}).get("errorMessage") or "").strip()
+        if any(keyword in error_message for keyword in ("登录失效", "重新登录", "token")):
+            return "mm 官匹查询暂时不可用：当前登录态已失效，请更新完美接口 token 后重试"
+        return error_message or "mm 官匹查询失败，请稍后重试"
+
     def _common_headers(self) -> dict:
         return {
             "Content-Type": "application/json;charset=UTF-8",
@@ -123,9 +130,7 @@ class MatchMakingPlatformLogic:
                 return None
             data = await resp.json()
             if data.get("statusCode") != 0:
-                request_data.error_msg = (
-                    data.get("errorMessage") or "完美平台查询失败，请稍后重试"
-                )
+                request_data.error_msg = self._build_api_error_message(data)
                 return None
             match_list = data.get("data", {}).get("matchList", [])
             if not match_list or match_round <= 0 or match_round > len(match_list):
@@ -162,11 +167,16 @@ class MatchMakingPlatformLogic:
                 return None
             data = await resp.json()
             if data.get("statusCode") != 0:
-                request_data.error_msg = (
-                    data.get("errorMessage") or "完美平台查询失败，请稍后重试"
-                )
+                request_data.error_msg = self._build_api_error_message(data)
                 return None
             return data.get("data", {})
+
+    @staticmethod
+    def _parse_score(value) -> int:
+        try:
+            return int(float(value or 0))
+        except (TypeError, ValueError):
+            return 0
 
     async def process_json(
         self,
@@ -185,6 +195,18 @@ class MatchMakingPlatformLogic:
             end_time = start_time + max(duration_minutes, 1) * 60
 
         map_name = base_info.get("map") or base_info.get("mapEn") or "未知地图"
+        team_a_score = self._parse_score(
+            base_info.get("team1Score")
+            or base_info.get("score1")
+            or base_info.get("aScore")
+            or base_info.get("teamAScore")
+        )
+        team_b_score = self._parse_score(
+            base_info.get("team2Score")
+            or base_info.get("score2")
+            or base_info.get("bScore")
+            or base_info.get("teamBScore")
+        )
         match_data = MatchData(
             match_round=match_round,
             map=map_name,
@@ -201,6 +223,9 @@ class MatchMakingPlatformLogic:
                 or base_info.get("matchType")
                 or ""
             ),
+            team_a_score=team_a_score,
+            team_b_score=team_b_score,
+            player_team="A",
         )
 
         players = json_data.get("players") or []
@@ -213,6 +238,7 @@ class MatchMakingPlatformLogic:
         if target_team <= 0:
             match_data.error_msg = f"未在比赛数据中识别玩家 {player_send} 的队伍"
             return match_data
+        match_data.player_team = "A" if target_team == 1 else "B"
         mvp_player = next((item for item in players if bool(item.get("mvp"))), None)
         if mvp_player is not None:
             match_data.mvp_uid = str(mvp_player.get("playerId") or "")

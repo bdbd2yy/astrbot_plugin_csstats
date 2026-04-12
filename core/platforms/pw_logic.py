@@ -175,6 +175,13 @@ class PerfectWorldPlatformLogic:
                 return None
             return data.get("data", {})
 
+    @staticmethod
+    def _parse_score(value) -> int:
+        try:
+            return int(float(value or 0))
+        except (TypeError, ValueError):
+            return 0
+
     async def process_json(
         self,
         json_data,
@@ -192,6 +199,18 @@ class PerfectWorldPlatformLogic:
             end_time = start_time + max(duration_minutes, 1) * 60
 
         map_name = base_info.get("map") or base_info.get("mapEn") or "未知地图"
+        team_a_score = self._parse_score(
+            base_info.get("team1Score")
+            or base_info.get("score1")
+            or base_info.get("aScore")
+            or base_info.get("teamAScore")
+        )
+        team_b_score = self._parse_score(
+            base_info.get("team2Score")
+            or base_info.get("score2")
+            or base_info.get("bScore")
+            or base_info.get("teamBScore")
+        )
         match_data = MatchData(
             match_round=match_round,
             map=map_name,
@@ -208,6 +227,9 @@ class PerfectWorldPlatformLogic:
                 or base_info.get("matchType")
                 or ""
             ),
+            team_a_score=team_a_score,
+            team_b_score=team_b_score,
+            player_team="A",
         )
 
         players = json_data.get("players") or []
@@ -220,6 +242,7 @@ class PerfectWorldPlatformLogic:
         if target_team <= 0:
             match_data.error_msg = f"未在比赛数据中识别玩家 {player_send} 的队伍"
             return match_data
+        match_data.player_team = "A" if target_team == 1 else "B"
         mvp_player = next((item for item in players if bool(item.get("mvp"))), None)
         if mvp_player is not None:
             match_data.mvp_uid = str(mvp_player.get("playerId") or "")
