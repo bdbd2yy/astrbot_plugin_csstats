@@ -1,3 +1,4 @@
+import re
 import urllib.parse
 
 import aiohttp
@@ -10,6 +11,94 @@ from ...models.player_data import PlayerDataRequest
 
 
 class FiveEPlatformLogic:
+    @staticmethod
+    def _extract_score_pair(value) -> tuple[int, int] | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, dict):
+            direct_pairs = (
+                ("team_a_score", "team_b_score"),
+                ("teamAScore", "teamBScore"),
+                ("score1", "score2"),
+                ("team1Score", "team2Score"),
+                ("a_score", "b_score"),
+                ("aScore", "bScore"),
+            )
+            for left_key, right_key in direct_pairs:
+                left = FiveEPlatformLogic._extract_round_score(value.get(left_key))
+                right = FiveEPlatformLogic._extract_round_score(value.get(right_key))
+                if left is not None and right is not None:
+                    return left, right
+            for nested_key in (
+                "score",
+                "score_data",
+                "round_score",
+                "roundScore",
+                "win_round",
+                "winRound",
+                "data_tips_detail",
+                "data_tips",
+                "detail",
+                "desc",
+                "result",
+                "result_desc",
+            ):
+                parsed = FiveEPlatformLogic._extract_score_pair(value.get(nested_key))
+                if parsed is not None:
+                    return parsed
+            for nested_value in value.values():
+                parsed = FiveEPlatformLogic._extract_score_pair(nested_value)
+                if parsed is not None:
+                    return parsed
+            return None
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                parsed = FiveEPlatformLogic._extract_score_pair(item)
+                if parsed is not None:
+                    return parsed
+            return None
+        if isinstance(value, str):
+            match = re.search(r"(?<!\d)(\d{1,2})\s*[-:：]\s*(\d{1,2})(?!\d)", value)
+            if match is None:
+                return None
+            return int(match.group(1)), int(match.group(2))
+        return None
+
+    @staticmethod
+    def _extract_fivee_match_score(json_data, group_1, group_2) -> tuple[int, int]:
+        main_data = json_data.get("main") or {}
+        main_group_1_score = FiveEPlatformLogic._extract_round_score(
+            main_data.get("group1_all_score")
+        )
+        main_group_2_score = FiveEPlatformLogic._extract_round_score(
+            main_data.get("group2_all_score")
+        )
+        if main_group_1_score is not None and main_group_2_score is not None:
+            return main_group_1_score, main_group_2_score
+
+        candidate_values = [
+            json_data.get("score", {}),
+            json_data.get("result", {}),
+            group_1[0] if group_1 else {},
+            group_2[0] if group_2 else {},
+            (group_1[0] or {}).get("sts", {}) if group_1 else {},
+            (group_2[0] or {}).get("sts", {}) if group_2 else {},
+            (group_1[0] or {}).get("fight", {}) if group_1 else {},
+            (group_2[0] or {}).get("fight", {}) if group_2 else {},
+        ]
+        for candidate in candidate_values:
+            parsed = FiveEPlatformLogic._extract_score_pair(candidate)
+            if parsed is not None:
+                return parsed
+
+        logger.info(
+            "5e 未提取到比赛比分，main=%s group1_sts=%s group2_sts=%s",
+            list(main_data.keys())[:20],
+            list((((group_1[0] or {}).get("sts")) or {}).keys())[:20] if group_1 else [],
+            list((((group_2[0] or {}).get("sts")) or {}).keys())[:20] if group_2 else [],
+        )
+        return 0, 0
+
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
     async def get_domain(
         self, session: aiohttp.ClientSession, request_data: PlayerDataRequest
@@ -149,6 +238,38 @@ class FiveEPlatformLogic:
                 return None
             return payload
 
+    @staticmethod
+    def _extract_round_score(value) -> int | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, dict):
+            for key in (
+                "score",
+                "round_score",
+                "roundScore",
+                "win_round",
+                "winRound",
+                "total",
+            ):
+                parsed = FiveEPlatformLogic._extract_round_score(value.get(key))
+                if parsed is not None:
+                    return parsed
+            return None
+        if isinstance(value, (list, tuple)):
+            if not value:
+                return None
+            if all(isinstance(item, (int, float)) for item in value):
+                return int(sum(value))
+            for item in value:
+                parsed = FiveEPlatformLogic._extract_round_score(item)
+                if parsed is not None:
+                    return parsed
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
+
     async def process_json(
         self,
         json_data,
@@ -158,6 +279,11 @@ class FiveEPlatformLogic:
     ) -> MatchData:
         _ = player_uuid
         basic_info = json_data.get("main", {})
+        group_1 = json_data.get("group_1", [])
+        group_2 = json_data.get("group_2", [])
+        team_a_score, team_b_score = self._extract_fivee_match_score(
+            json_data, group_1, group_2
+        )
         match_data = MatchData(
             match_round=match_round,
             map=basic_info.get("map_desc", "未知地图"),
@@ -168,6 +294,9 @@ class FiveEPlatformLogic:
             opponent_players=[],
             mvp_uid=basic_info.get("mvp_uid", ""),
             error_msg=None,
+            team_a_score=team_a_score,
+            team_b_score=team_b_score,
+            player_team="A",
         )
         group_1 = json_data.get("group_1", [])
         group_2 = json_data.get("group_2", [])
@@ -177,6 +306,7 @@ class FiveEPlatformLogic:
         if target_group is None or opponent_group is None:
             match_data.error_msg = f"未在比赛数据中找到玩家 {player_send}"
             return match_data
+        match_data.player_team = "A" if target_group is group_1 else "B"
 
         for player_stats in target_group:
             player_name = (

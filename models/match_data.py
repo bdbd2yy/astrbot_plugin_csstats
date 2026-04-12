@@ -29,6 +29,9 @@ class MatchData:
     mvp_uid: str
     error_msg: str | None = None
     match_type: str = ""
+    team_a_score: int = 0
+    team_b_score: int = 0
+    player_team: str = "A"
 
     @property
     def start_datetime(self):

@@ -214,16 +214,33 @@ class CsstatsPluginLogic:
 
         return "5e"
 
+    def _normalize_trigger_text(self, raw_text: str | None) -> str:
+        return (raw_text or "").strip()
+
+    def detect_message_intent(self, raw_text: str | None) -> str | None:
+        text = self._normalize_trigger_text(raw_text)
+        if not text:
+            return None
+        if re.match(r"^/bind\b", text, flags=re.IGNORECASE):
+            return "bind"
+        if re.match(r"^/match\b", text, flags=re.IGNORECASE):
+            return "match"
+        if re.match(r"^/cs_help\b", text, flags=re.IGNORECASE):
+            return "help"
+        return None
+
     async def handle_player_data_request_bind(
         self,
         event: AstrMessageEvent,
+        raw_text: str | None = None,
     ) -> PlayerDataRequest:
-        message_str = event.message_str
+        message_str = raw_text if raw_text is not None else event.message_str
+        message_str = self._normalize_trigger_text(message_str)
         qq_id = event.get_sender_id()
         username = event.get_sender_name()
 
-        full_text = (event.message_str or "").strip()
-        match = re.match(r"^(?:添加用户|绑定用户|添加|绑定|bind)\s*(.+)", full_text)
+        full_text = (message_str or "").strip()
+        match = re.match(r"^/(?:bind)\s*(.+)", full_text, flags=re.IGNORECASE)
         playername = None
         platform = None
         if match is not None:
@@ -275,8 +292,10 @@ class CsstatsPluginLogic:
     async def handle_player_data_request_match(
         self,
         event: AstrMessageEvent,
+        raw_text: str | None = None,
     ) -> tuple[PlayerDataRequest, int]:
-        message_str = event.message_str
+        message_str = raw_text if raw_text is not None else event.message_str
+        message_str = self._normalize_trigger_text(message_str)
         sender_id = event.get_sender_id()
         qq_id = sender_id
         self_id = str(event.get_self_id())
@@ -291,8 +310,8 @@ class CsstatsPluginLogic:
         mentioned_qq_id = ""
         mentioned_bot = False
 
-        full_text = (event.message_str or "").strip()
-        cmd_match = re.match(r"^(?:match|战绩|查询战绩)\s*(.*)$", full_text)
+        full_text = (message_str or "").strip()
+        cmd_match = re.match(r"^/(?:match)\s*(.*)$", full_text, flags=re.IGNORECASE)
         if cmd_match is not None:
             tail_tokens = [
                 token for token in re.split(r"\s+", cmd_match.group(1).strip()) if token
@@ -492,6 +511,137 @@ class CsstatsPluginLogic:
         return await self.ai_logic.build_llm_evaluation_input(
             match_data, player_send, public_text
         )
+
+    def build_match_report_payload(
+        self,
+        match_data: MatchData,
+        player_send: str | None,
+        platform: str,
+        stats_text: str,
+        llm_comment: str | None,
+        premade_summary: dict | None = None,
+    ) -> dict:
+        player_key = player_send or ""
+        player_stats = match_data.player_stats.get(player_key)
+        premade_summary = premade_summary or {}
+
+        def _format_float(value) -> str:
+            if value in (None, ""):
+                return "--"
+            try:
+                return f"{float(value):.2f}"
+            except (TypeError, ValueError):
+                return str(value)
+
+        if player_stats:
+            is_win = player_stats.win == 1
+            match_result = "胜利" if is_win else "失败"
+            elo_sign = "+" if is_win else "-"
+            elo_change_text = f"{elo_sign}{abs(player_stats.elo_change):.2f}"
+            kd_text = f"{player_stats.kill}-{player_stats.death}"
+            headshot_rate_text = f"{player_stats.headshot_rate * 100:.2f}%"
+        else:
+            match_result = "未知"
+            elo_change_text = "--"
+            kd_text = "--"
+            headshot_rate_text = "--"
+
+        team_a_score = int(match_data.team_a_score or 0)
+        team_b_score = int(match_data.team_b_score or 0)
+        if match_data.player_team == "B":
+            player_team_score = team_b_score
+            opponent_team_score = team_a_score
+        else:
+            player_team_score = team_a_score
+            opponent_team_score = team_b_score
+        score_text = f"{player_team_score}-{opponent_team_score}"
+        if player_team_score > opponent_team_score:
+            score_result = "win"
+        elif player_team_score < opponent_team_score:
+            score_result = "lose"
+        else:
+            score_result = "draw"
+
+        teammate_names = premade_summary.get("teammate_names", [])
+        target_is_worst = premade_summary.get("target_is_worst", False)
+        worst_player_name = premade_summary.get("worst_player_name", "")
+
+        premade_text = ""
+        if teammate_names:
+            teammate_text = " ".join(teammate_names)
+            premade_text = f"本局你和 {teammate_text} 一起组排，最菜的是 "
+            if target_is_worst:
+                premade_text += "你自己！"
+            elif worst_player_name:
+                premade_text += f"{worst_player_name}！"
+            else:
+                premade_text += "未知队友！"
+
+        comment_text = (llm_comment or "评价生成失败").strip()
+        comment_text = comment_text.replace("\r\n", "\n").replace("\r", "\n")
+        comment_text = re.sub(r"[*_`#>]", "", comment_text)
+        comment_text = re.sub(r"^[ \t]*[-•]+[ \t]*", "", comment_text, flags=re.MULTILINE)
+        comment_text = re.sub(r"\n{3,}", "\n\n", comment_text).strip()
+
+        summary_text = (
+            stats_text.replace("\n", "；").strip()
+            if stats_text.strip()
+            else f"{match_result}，{match_data.map}，Rating {_format_float(player_stats.rating) if player_stats else '--'}，KD {kd_text}，ADR {_format_float(player_stats.adr) if player_stats else '--'}，比分 {score_text}"
+        )
+
+        def _serialize_player(player, *, is_self: bool = False) -> dict:
+            return {
+                "playername": player.playername,
+                "rating": _format_float(player.rating),
+                "rating_value": float(player.rating),
+                "kd": f"{player.kill}-{player.death}",
+                "adr": _format_float(player.adr),
+                "rws": _format_float(player.rws),
+                "headshot_rate": f"{player.headshot_rate * 100:.2f}%",
+                "elo_change": _format_float(player.elo_change),
+                "win": player.win,
+                "is_self": is_self,
+            }
+
+        teammates = []
+        if player_stats:
+            teammates.append(_serialize_player(player_stats, is_self=True))
+        teammates.extend(
+            _serialize_player(player) for player in match_data.teammate_players
+        )
+        teammates.sort(key=lambda player: player["rating_value"], reverse=True)
+
+        opponents = [_serialize_player(player) for player in match_data.opponent_players]
+        opponents.sort(key=lambda player: player["rating_value"], reverse=True)
+
+        def _format_match_round_text(match_round: int) -> str:
+            if match_round <= 1:
+                return "最近一把"
+            return f"上{match_round}把"
+
+        return {
+            "platform": platform,
+            "player_name": player_stats.playername if player_stats else (player_send or "未知玩家"),
+            "match_round_text": _format_match_round_text(match_data.match_round),
+            "match_type": match_data.match_type or "未知",
+            "match_time": str(match_data.start_datetime),
+            "duration_minutes": _format_float(match_data.duration),
+            "map_name": match_data.map,
+            "match_result": match_result,
+            "elo_change_text": elo_change_text,
+            "kd_text": kd_text,
+            "rating": _format_float(player_stats.rating) if player_stats else "--",
+            "adr": _format_float(player_stats.adr) if player_stats else "--",
+            "rws": _format_float(player_stats.rws) if player_stats else "--",
+            "score_text": score_text,
+            "score_result": score_result,
+            "headshot_rate_text": headshot_rate_text,
+            "llm_comment": comment_text,
+            "premade_text": premade_text,
+            "stats_text": summary_text,
+            "teammates": teammates,
+            "opponents": opponents,
+        }
 
     async def _user_is_added(
         self,

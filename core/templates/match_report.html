@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>CS 战绩卡</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      background: #2b313c;
+      color: #d7dde6;
+    }
+    .card {
+      width: 1120px;
+      margin: 0 auto;
+      background: #323846;
+      border: 1px solid #4b5563;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+    }
+    .header {
+      padding: 24px 28px 18px;
+      background: linear-gradient(180deg, #394150 0%, #2f3643 100%);
+      border-bottom: 1px solid #4b5563;
+    }
+    .title-row {
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-start;
+      gap: 20px;
+    }
+    .title h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: #f3f4f6;
+      letter-spacing: 0.2px;
+    }
+    .subtitle {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #a7b0be;
+    }
+    .overview {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 18px;
+      padding: 20px 28px;
+      border-bottom: 1px solid #4b5563;
+      background: #303744;
+    }
+    .metrics-panel,
+    .info-panel,
+    .comment-panel,
+    .premade-panel,
+    .table-panel {
+      background: #2d3440;
+      border: none;
+      box-shadow: inset 0 0 0 1px #48515f, 0 10px 26px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+    }
+    .table-panel {
+      box-shadow: inset 0 0 0 1px #4b5462, 0 14px 34px rgba(0, 0, 0, 0.34);
+    }
+    .panel-title {
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #e5e7eb;
+      background: #39414d;
+      border-bottom: 1px solid #48515f;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      box-shadow: inset 0 -1px 0 #48515f;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .metric {
+      padding: 11px 14px;
+      border-right: 1px solid #48515f;
+      border-bottom: 1px solid #48515f;
+      min-height: 72px;
+    }
+    .metric:nth-child(4n) { border-right: none; }
+    .metric:nth-last-child(-n + 4) { border-bottom: none; }
+    .metric .label {
+      font-size: 10px;
+      color: #8f99a8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .metric .value {
+      font-size: 22px;
+      line-height: 1.05;
+      font-weight: 700;
+      color: #f3f4f6;
+    }
+    .metric .value.rating-high,
+    .rating-value.rating-high { color: #6ad14b; }
+    .metric .value.rating-mid,
+    .rating-value.rating-mid { color: #d5dbe5; }
+    .metric .value.rating-low,
+    .rating-value.rating-low { color: #ff6b6b; }
+    .metric .value.rws-high,
+    .rws-high { color: #6ad14b; }
+    .metric .value.rws-mid,
+    .rws-mid { color: #d5dbe5; }
+    .metric .value.rws-low,
+    .rws-low { color: #ff6b6b; }
+    .metric .value.win { color: #6ad14b; }
+    .metric .value.lose { color: #ff6b6b; }
+    .metric .value.draw { color: #d5dbe5; }
+    .info-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+    .info-item {
+      padding: 11px 14px;
+      border-right: 1px solid #48515f;
+      border-bottom: 1px solid #48515f;
+      min-height: 72px;
+    }
+    .info-item:nth-child(2n) { border-right: none; }
+    .info-item:nth-last-child(-n + 2) { border-bottom: none; }
+    .info-label {
+      font-size: 10px;
+      color: #8f99a8;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 6px;
+    }
+    .info-value {
+      font-size: 14px;
+      line-height: 1.2;
+      color: #e5e7eb;
+      font-weight: 600;
+    }
+    .section {
+      padding: 22px 28px 0;
+    }
+    .tables {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border: none;
+    }
+    th, td {
+      padding: 10px 8px;
+      border: none;
+      border-bottom: 1px solid #434b58;
+      border-right: 1px solid #434b58;
+      font-size: 14px;
+      text-align: center;
+    }
+    th {
+      background: #39414d;
+      color: #aeb8c7;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    td {
+      color: #d5dbe5;
+      background: #323846;
+    }
+    tbody tr:nth-child(even) td {
+      background: #2f3541;
+    }
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+    th:last-child,
+    td:last-child {
+      border-right: none;
+    }
+    .player-col { width: 42%; text-align: left; }
+    .num-col { width: 14.5%; text-align: center; }
+    .player-name {
+      display: inline-block;
+      max-width: 100%;
+      color: #cfd6df;
+      font-weight: 600;
+      font-size: 13px;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+    }
+    .player-name.long-name {
+      max-width: 170px;
+    }
+    .self-tag {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 5px;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #f3f4f6;
+      background: #5b6574;
+      border: 1px solid #768093;
+      vertical-align: middle;
+    }
+    .rating-value {
+      font-weight: 700;
+    }
+    .comment-panel,
+    .premade-panel {
+      margin-top: 18px;
+    }
+    .comment-body,
+    .premade-body {
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #d8dee8;
+      word-break: break-word;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title-row">
+        <div class="title">
+          <h1>{{ player_name }} 的 {{ match_round_text }}比赛战绩</h1>
+          <div class="subtitle">平台 {{ platform|upper }} · 地图 {{ map_name }} · 时间 {{ match_time }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="overview">
+      <div class="metrics-panel">
+        <div class="panel-title">Overview</div>
+        <div class="metrics-grid">
+          <div class="metric"><div class="label">Rating</div><div class="value {% if rating|float >= 1.05 %}rating-high{% elif rating|float < 0.95 %}rating-low{% else %}rating-mid{% endif %}">{{ rating }}</div></div>
+          <div class="metric"><div class="label">KD</div><div class="value">{{ kd_text }}</div></div>
+          <div class="metric"><div class="label">ADR</div><div class="value">{{ adr }}</div></div>
+          <div class="metric"><div class="label">{% if platform in ['pw', 'mm'] %}WE{% else %}RWS{% endif %}</div><div class="value {% if rws|float > 10 %}rws-high{% elif rws|float < 8 %}rws-low{% else %}rws-mid{% endif %}">{{ rws }}</div></div>
+          <div class="metric"><div class="label">Result</div><div class="value {{ 'win' if match_result == '胜利' else 'lose' }}">{{ match_result }}</div></div>
+          <div class="metric"><div class="label">Elo</div><div class="value">{{ elo_change_text }}</div></div>
+          <div class="metric"><div class="label">Score</div><div class="value {{ score_result }}">{{ score_text }}</div></div>
+          <div class="metric"><div class="label">Duration</div><div class="value">{{ duration_minutes }}m</div></div>
+        </div>
+      </div>
+
+      <div class="info-panel">
+        <div class="panel-title">Match Info</div>
+        <div class="info-list">
+          <div class="info-item"><div class="info-label">Map</div><div class="info-value">{{ map_name }}</div></div>
+          <div class="info-item"><div class="info-label">Platform</div><div class="info-value">{{ platform|upper }}</div></div>
+          <div class="info-item"><div class="info-label">Type</div><div class="info-value">{{ match_type }}</div></div>
+          <div class="info-item"><div class="info-label">Time</div><div class="info-value">{{ match_time }}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section tables">
+      <div class="table-panel">
+        <div class="panel-title">队伍A</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="player-col">Player</th>
+              <th class="num-col">Rating</th>
+              <th class="num-col">K-D</th>
+              <th class="num-col">ADR</th>
+              <th class="num-col">{% if platform in ['pw', 'mm'] %}WE{% else %}RWS{% endif %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for player in teammates %}
+            <tr>
+              <td class="player-col"><span class="player-name {% if player.playername|length > 16 %}long-name{% endif %}">{{ player.playername }}</span>{% if player.is_self %}<span class="self-tag">你</span>{% endif %}</td>
+              <td class="num-col {% if player.rating_value >= 1.05 %}rating-high{% elif player.rating_value < 0.95 %}rating-low{% else %}rating-mid{% endif %} rating-value">{{ player.rating }}</td>
+              <td class="num-col">{{ player.kd }}</td>
+              <td class="num-col">{{ player.adr }}</td>
+              <td class="num-col {% if player.rws|float > 10 %}rws-high{% elif player.rws|float < 8 %}rws-low{% else %}rws-mid{% endif %}">{{ player.rws }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-panel">
+        <div class="panel-title">队伍B</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="player-col">Player</th>
+              <th class="num-col">Rating</th>
+              <th class="num-col">K-D</th>
+              <th class="num-col">ADR</th>
+              <th class="num-col">{% if platform in ['pw', 'mm'] %}WE{% else %}RWS{% endif %}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for player in opponents %}
+            <tr>
+              <td class="player-col"><span class="player-name {% if player.playername|length > 16 %}long-name{% endif %}">{{ player.playername }}</span></td>
+              <td class="num-col {% if player.rating_value >= 1.05 %}rating-high{% elif player.rating_value < 0.95 %}rating-low{% else %}rating-mid{% endif %} rating-value">{{ player.rating }}</td>
+              <td class="num-col">{{ player.kd }}</td>
+              <td class="num-col">{{ player.adr }}</td>
+              <td class="num-col {% if player.rws|float > 10 %}rws-high{% elif player.rws|float < 8 %}rws-low{% else %}rws-mid{% endif %}">{{ player.rws }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if premade_text %}
+    <div class="section">
+      <div class="premade-panel">
+        <div class="panel-title">Premade</div>
+        <div class="premade-body">{{ premade_text }}</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="comment-panel">
+        <div class="panel-title">LLM Comment</div>
+        <div class="comment-body">{{ llm_comment }}</div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
